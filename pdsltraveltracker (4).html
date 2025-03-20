@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Visa Travel Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: url('Advancing the world through Engineering.png') no-repeat center center fixed;
+            background-size: cover;
+            min-height: 100vh;
+        }
+        .content-wrapper {
+            background: rgba(212, 215, 218, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .period-container {
+            margin: 5px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .table-container {
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .result {
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px 0;
+            color: rgb(29, 29, 164);
+        }
+        h4 {
+            color: rgb(29, 29, 164);
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+        }
+        #dataPopup {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border: 1px solid #ccc;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="content-wrapper">
+        <h1>PDSL Travel Tracker</h1>
+        
+        <label>Employee Name:</label>
+        <input type="text" id="employeeName" placeholder="Enter employee name"><br><br>
+        
+        <label>Visa Start Date:</label>
+        <input type="date" id="startDate">
+
+        <label>Visa End Date (optional):</label>
+        <input type="date" id="endDate"><br>
+
+        <button onclick="addPeriod()">+ Add Period</button>
+        <button onclick="showDataPopup()">Enter Data</button>
+        <button onclick="calculateDays()">Calculate</button>
+        <button onclick="refresh()">Refresh</button>
+        <button onclick="downloadExcel()">Download Excel</button>
+
+        <div id="periodsFrame"></div>
+        <h4>Recommended maximum number of travel days per year: 175</h4>
+        <div class="result" id="resultLabel">No of days left to travel abroad: 175 days</div>
+
+        <div class="table-container">
+            <h3>📅 Monthly Travel Limits:</h3>
+            <table id="monthlyTable">
+                <thead>
+                    <tr>
+                        <th>Month</th>
+                        <th>Days Left</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="table-container">
+            <h3>📊 Total Out-of-Country Days in Each 12-Month Rolling Period:</h3>
+            <table id="rollingTable">
+                <thead>
+                    <tr>
+                        <th>Start Date</th>
+                        <th>End Date</th>
+                        <th>Total Days Travelled</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="dataPopup">
+        <h3>Enter Travel Data</h3>
+        <p>Format: DD-MM-YYYY to DD-MM-YYYY (one per line)</p>
+        <textarea id="dataInput" rows="10" cols="40"></textarea><br>
+        <button onclick="processManualData()">Submit</button>
+        <button onclick="hideDataPopup()">Cancel</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        let periods = [];
+
+        function addPeriod(fromDate = null, toDate = null) {
+            const frame = document.createElement('div');
+            frame.className = 'period-container';
+            
+            frame.innerHTML = `  
+                <label>From:</label> 
+                <input type="date" class="from-date"> 
+                <label>To:</label> 
+                <input type="date" class="to-date"> 
+                <span class="total-days">Total: 0 days</span> 
+                <button onclick="deletePeriod(this.parentElement)">X</button>
+            `;
+            
+            document.getElementById('periodsFrame').appendChild(frame);
+            
+            const fromInput = frame.querySelector('.from-date');
+            const toInput = frame.querySelector('.to-date');
+            const totalSpan = frame.querySelector('.total-days');
+            
+            if (fromDate && toDate) {
+                fromInput.value = fromDate.toISOString().split('T')[0];
+                toInput.value = toDate.toISOString().split('T')[0];
+                updateTotalDays(fromInput, toInput, totalSpan);
+            }
+
+            fromInput.onchange = () => updateTotalDays(fromInput, toInput, totalSpan);
+            toInput.onchange = () => updateTotalDays(fromInput, toInput, totalSpan);
+            
+            periods.push({ frame, fromInput, toInput, totalSpan });
+        }
+
+        function updateTotalDays(fromInput, toInput, totalSpan) {
+            const fromDate = new Date(fromInput.value);
+            const toDate = new Date(toInput.value);
+            
+            if (fromInput.value && toInput.value && !isNaN(fromDate) && !isNaN(toDate) && toDate >= fromDate) {
+                const timeDiff = toDate - fromDate;
+                const days = Math.round(timeDiff / (1000 * 60 * 60 * 24)) + 1;
+                totalSpan.textContent = `Total: ${days} days`;
+            } else {
+                totalSpan.textContent = 'Total: 0 days';
+            }
+        }
+
+        function deletePeriod(frame) {
+            periods = periods.filter(p => p.frame !== frame);
+            frame.remove();
+        }
+
+        function calculateRollingTotals(visaStartDate, visaEndDate, travelPeriods) {
+            const rollingTotals = [];
+            const today = new Date();
+            let startDate = new Date(visaStartDate);
+            const endLoopDate = visaEndDate ? new Date(visaEndDate) : today;
+
+            startDate.setDate(1);
+            startDate.setHours(0, 0, 0, 0);
+
+            const processedMonths = new Set();
+
+            while (startDate <= endLoopDate) {
+                const yearMonth = startDate.toISOString().slice(0, 7);
+                
+                if (processedMonths.has(yearMonth)) {
+                    startDate.setMonth(startDate.getMonth() + 1);
+                    continue;
+                }
+
+                const endDate = new Date(startDate);
+                endDate.setFullYear(endDate.getFullYear() + 1);
+                if (visaEndDate && endDate > endLoopDate) endDate.setTime(endLoopDate.getTime());
+
+                let totalDays = 0;
+                travelPeriods.forEach(({ from, to }) => {
+                    if (from <= endDate && to >= startDate) {
+                        totalDays += Math.round((Math.min(to, endDate) - Math.max(from, startDate)) / (1000 * 60 * 60 * 24)) + 1;
+                    }
+                });
+
+                rollingTotals.push([startDate.toISOString().split('T')[0], 
+                                    endDate.toISOString().split('T')[0], 
+                                    totalDays, 
+                                    totalDays <= 175 ? '✅ Safe' : '⚠️ Exceeds Limit']);
+                processedMonths.add(yearMonth);
+                startDate.setMonth(startDate.getMonth() + 1);
+            }
+            return rollingTotals;
+        }
+
+        function calculateMonthlyLimits(visaStartDate, visaEndDate, travelPeriods) {
+            const monthlyLimits = [];
+            const today = new Date();
+            const startDate = visaStartDate > today ? new Date(visaStartDate) : new Date(today);
+            const endDate = new Date(startDate);
+            endDate.setFullYear(endDate.getFullYear() + 1);
+            const totalLimit = 175;
+
+            let currentDate = new Date(startDate);
+            while (currentDate < endDate) {
+                const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+                const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+
+                const windowStart = new Date(monthEnd);
+                windowStart.setFullYear(windowStart.getFullYear() - 1);
+
+                let usedDaysInWindow = 0;
+                travelPeriods.forEach(({ from, to }) => {
+                    if (from <= monthEnd && to >= windowStart) {
+                        const start = from > windowStart ? from : windowStart;
+                        const end = to < monthEnd ? to : monthEnd;
+                        usedDaysInWindow += Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                    }
+                });
+
+                const monthName = monthStart.toLocaleString('default', { month: 'long', year: 'numeric' });
+                const daysLeft = Math.max(0, totalLimit - usedDaysInWindow);
+
+                monthlyLimits.push([monthName, `${daysLeft} days`]);
+                currentDate.setMonth(currentDate.getMonth() + 1);
+            }
+
+            return monthlyLimits;
+        }
+
+        function updateMonthlyTable(monthlyLimits) {
+            const tbody = document.getElementById('monthlyTable').querySelector('tbody');
+            tbody.innerHTML = '';
+            monthlyLimits.forEach(([month, daysLeft]) => {
+                const row = tbody.insertRow();
+                row.insertCell().textContent = month;
+                row.insertCell().textContent = daysLeft;
+            });
+        }
+
+        function updateRollingTable(rollingTotals) {
+            const tbody = document.getElementById('rollingTable').querySelector('tbody');
+            tbody.innerHTML = '';
+            rollingTotals.forEach(([start, end, total, status]) => {
+                const row = tbody.insertRow();
+                row.insertCell().textContent = start;
+                row.insertCell().textContent = end;
+                row.insertCell().textContent = total;
+                row.insertCell().textContent = status;
+            });
+        }
+
+        function calculateDays() {
+            const visaStartDate = new Date(document.getElementById('startDate').value);
+            const visaEndDateInput = document.getElementById('endDate').value;
+            const visaEndDate = visaEndDateInput ? new Date(visaEndDateInput) : null;
+
+            const travelPeriods = periods.map(p => ({
+                from: new Date(p.fromInput.value),
+                to: new Date(p.toInput.value)
+            })).filter(p => !isNaN(p.from) && !isNaN(p.to));
+
+            const monthlyLimits = calculateMonthlyLimits(visaStartDate, visaEndDate, travelPeriods);
+            updateMonthlyTable(monthlyLimits);
+            
+            const rollingTotals = calculateRollingTotals(visaStartDate, visaEndDate, travelPeriods);
+            updateRollingTable(rollingTotals);
+
+            // Calculate minimum days left from monthlyLimits
+            const minDaysLeft = Math.min(...monthlyLimits.map(([, daysLeft]) => parseInt(daysLeft.split(' ')[0])));
+            
+            document.getElementById('resultLabel').textContent = 
+                `Safe Travel Limits Per Month for next 12 months: ${minDaysLeft} days`;
+        }
+
+        function refresh() {
+            periods.forEach(p => p.frame.remove());
+            periods = [];
+            addPeriod();
+            document.getElementById('startDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('endDate').value = '';
+            document.getElementById('employeeName').value = '';
+            document.getElementById('resultLabel').textContent = 'No of days left to travel abroad: 175 days';
+            updateRollingTable([]);
+            updateMonthlyTable([]);
+        }
+
+        function downloadExcel() {
+            const employeeName = document.getElementById('employeeName').value.trim() || 'Unknown';
+            const sanitizedEmployeeName = employeeName.replace(/[^a-zA-Z0-9_-]/g, '_');
+            const fileName = `PDSL_Travel_Tracker_${sanitizedEmployeeName}.xlsx`;
+
+            const travelPeriodsData = periods.map(({ fromInput, toInput }) => ({
+                from: fromInput.value,
+                to: toInput.value,
+            }));
+
+            const visaStartDate = document.getElementById('startDate').value;
+            const visaEndDate = document.getElementById('endDate').value || null;
+            const monthlyLimits = calculateMonthlyLimits(visaStartDate, visaEndDate, travelPeriodsData);
+            const rollingTotals = calculateRollingTotals(visaStartDate, visaEndDate, travelPeriodsData);
+
+            const sheetData = [
+                ["Employee Name", employeeName],
+                ["Visa Start Date", visaStartDate],
+                ["Visa End Date", visaEndDate],
+                ["No of days left to travel abroad:", document.getElementById('resultLabel').textContent.split(': ')[1]],
+                [],
+                ["Monthly Limits"],
+                ...monthlyLimits,
+                [],
+                ["Rolling Totals"],
+                ...rollingTotals,
+            ];
+
+            const ws = XLSX.utils.aoa_to_sheet(sheetData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "PDSL_Travel_Data");
+            XLSX.writeFile(wb, fileName);
+        }
+
+        function showDataPopup() {
+            document.getElementById('dataPopup').style.display = 'block';
+        }
+
+        function hideDataPopup() {
+            document.getElementById('dataPopup').style.display = 'none';
+        }
+
+        function processManualData() {
+            const inputData = document.getElementById('dataInput').value.trim();
+            if (!inputData) return;
+
+            periods.forEach(p => p.frame.remove());
+            periods = [];
+
+            const lines = inputData.split('\n');
+            lines.forEach(line => {
+                const [fromStr, toStr] = line.split(' to ');
+                if (fromStr && toStr) {
+                    const [fromDay, fromMonth, fromYear] = fromStr.split('-');
+                    const [toDay, toMonth, toYear] = toStr.split('-');
+                    const fromDate = new Date(`${fromYear}-${fromMonth}-${fromDay}`);
+                    const toDate = new Date(`${toYear}-${toMonth}-${toDay}`);
+                    if (!isNaN(fromDate) && !isNaN(toDate)) {
+                        addPeriod(fromDate, toDate);
+                    }
+                }
+            });
+
+            hideDataPopup();
+            calculateDays();
+        }
+
+        // Initialize with today's date and an empty period
+        document.getElementById('startDate').value = new Date().toISOString().split('T')[0];
+        addPeriod();
+    </script>
+</body>
+</html>
