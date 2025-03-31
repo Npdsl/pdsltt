@@ -315,33 +315,60 @@
             const employeeName = document.getElementById('employeeName').value.trim() || 'Unknown';
             const sanitizedEmployeeName = employeeName.replace(/[^a-zA-Z0-9_-]/g, '_');
             const fileName = `PDSL_Travel_Tracker_${sanitizedEmployeeName}.xlsx`;
+            const visaStartDate = document.getElementById('startDate').value;
+            const visaEndDate = document.getElementById('endDate').value || 'Not specified';
+            const daysLeft = document.getElementById('resultLabel').textContent;
 
-            const travelPeriodsData = periods.map(({ fromInput, toInput }) => ({
+            const travelPeriodsData = periods.map(({ fromInput, toInput, totalSpan }) => ({
                 from: fromInput.value,
                 to: toInput.value,
+                total: totalSpan.textContent.replace('Total: ', '')
+            })).filter(p => p.from && p.to);
+            const travelPeriods = travelPeriodsData.map(p => ({
+                from: new Date(p.from),
+                to: new Date(p.to)
             }));
 
-            const visaStartDate = document.getElementById('startDate').value;
-            const visaEndDate = document.getElementById('endDate').value || null;
-            const monthlyLimits = calculateMonthlyLimits(visaStartDate, visaEndDate, travelPeriodsData);
-            const rollingTotals = calculateRollingTotals(visaStartDate, visaEndDate, travelPeriodsData);
+            // Calculate tables data
+            const monthlyLimits = calculateMonthlyLimits(new Date(visaStartDate), visaEndDate !== 'Not specified' ? new Date(visaEndDate) : null, travelPeriods);
+            const rollingTotals = calculateRollingTotals(new Date(visaStartDate), visaEndDate !== 'Not specified' ? new Date(visaEndDate) : null, travelPeriods);
 
+            // Prepare Excel data with clear sections
             const sheetData = [
-                ["Employee Name", employeeName],
-                ["Visa Start Date", visaStartDate],
-                ["Visa End Date", visaEndDate],
-                ["No of days left to travel abroad:", document.getElementById('resultLabel').textContent.split(': ')[1]],
+                ['PDSL Travel Tracker Report'],
                 [],
-                ["Monthly Limits"],
+                ['Employee Details'],
+                ['Employee Name', employeeName],
+                ['Visa Start Date', visaStartDate],
+                ['Visa End Date', visaEndDate],
+                [daysLeft],
+                [],
+                ['Travel Periods'],
+                ['From Date', 'To Date', 'Total Days'],
+                ...travelPeriodsData.map(p => [p.from, p.to, p.total]),
+                [],
+                ['Monthly Travel Limits'],
+                ['Month', 'Days Left'],
                 ...monthlyLimits,
                 [],
-                ["Rolling Totals"],
-                ...rollingTotals,
+                ['Rolling 12-Month Periods'],
+                ['Start Date', 'End Date', 'Total Days Travelled', 'Status'],
+                ...rollingTotals
             ];
 
+            // Create workbook and worksheet
             const ws = XLSX.utils.aoa_to_sheet(sheetData);
+            
+            // Add basic styling
+            ws['!cols'] = [
+                { wch: 20 }, // From Date / Start Date / Month
+                { wch: 20 }, // To Date / End Date / Days Left
+                { wch: 15 }, // Total Days
+                { wch: 15 }  // Status
+            ];
+
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "PDSL_Travel_Data");
+            XLSX.utils.book_append_sheet(wb, ws, "Travel_Tracker");
             XLSX.writeFile(wb, fileName);
         }
 
