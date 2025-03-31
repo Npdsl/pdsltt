@@ -296,7 +296,7 @@
             const minDaysLeft = Math.min(...monthlyLimits.map(([, daysLeft]) => parseInt(daysLeft.split(' ')[0])));
             
             document.getElementById('resultLabel').textContent = 
-                `Safe Travel Limits Per Month for next 12 months: ${minDaysLeft} days`;
+               // `Safe Travel Limits Per Month for next 12 months: ${minDaysLeft} days`;
         }
 
         function refresh() {
